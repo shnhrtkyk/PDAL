@@ -66,8 +66,10 @@ void ReprojectionFilter::addArgs(ProgramArgs& args)
 {
     args.add("out_srs", "Output spatial reference", m_outSRS).setPositional();
     args.add("in_srs", "Input spatial reference", m_inSRS);
-    args.add("in_axis_ordering", "Axis ordering override for in_srs", m_inAxisOrderingArg, {} );
-    args.add("out_axis_ordering", "Axis ordering override for out_srs", m_outAxisOrderingArg, {} );
+    args.add("in_axis_ordering", "Axis ordering override for in_srs",
+        m_inAxisOrderingArg);
+    args.add("out_axis_ordering", "Axis ordering override for out_srs",
+        m_outAxisOrderingArg);
 }
 
 
@@ -106,6 +108,10 @@ void ReprojectionFilter::prepared(PointTableRef table)
 
     };
 
+#if (GDAL_VERSION_MAJOR < 3)
+    if (m_inAxisOrderingArg.size()) || m_outAxisOrderingArg.size())
+        throwError("Axis ordering not supported with GDAL 2.");
+#endif
     // Check that the sorted vector is 1,2 or 1,2,3
     auto check = [this] (const std::vector<int>& in)
     {
