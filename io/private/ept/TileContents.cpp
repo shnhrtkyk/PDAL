@@ -142,7 +142,7 @@ void TileContents::readAddon(const Addon& addon, size_t expectedPts)
 {
     m_addonTables[addon.srcId()] = nullptr;
 
-    point_count_t addonPoints = addon.points(key());
+    point_count_t addonPoints = addon.size(key());
     if (addonPoints == 0)
         return;
 

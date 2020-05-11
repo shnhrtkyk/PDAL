@@ -92,14 +92,10 @@ private:
     void process(PointViewPtr dstView, const TileContents& tile,
         point_count_t count);
     bool processPoint(PointRef& dst, const TileContents& tile);
-
-    // To allow testing of hidden getRemoteType() and getCoercedType().
-    /**
-    static Dimension::Type getRemoteTypeTest(const NL::json& dimInfo);
-    static Dimension::Type getCoercedTypeTest(const NL::json& dimInfo);
-    **/
-
     void load(const Overlap& overlap);
+    void loadHierarchy(const std::string& directory, Hierarchy& h,
+        const Key& key);
+    bool filter(const Key& key);
 
     std::unique_ptr<Connector> m_connector;
     std::unique_ptr<EptInfo> m_info;

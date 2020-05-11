@@ -145,7 +145,7 @@ void EptAddonWriter::writeOne(const PointViewPtr view, const Addon& addon) const
     for (const Overlap& overlap : *m_hierarchy)
     {
         std::vector<char>& b = buffers[overlap.m_nodeId - 1];
-        b.resize(overlap.m_count * itemSize);
+        b.resize(overlap.m_size * itemSize);
     }
 
     // Fill in our buffers with the data from the view.
@@ -219,7 +219,7 @@ void EptAddonWriter::writeHierarchy(const std::string& directory,
         return;
 
     const Overlap& overlap = *it;
-    if (!overlap.m_count)
+    if (!overlap.m_size)
         return;
 
     const std::string keyName = key.toString();
@@ -228,7 +228,7 @@ void EptAddonWriter::writeHierarchy(const std::string& directory,
         curr[keyName] = -1;
 
         // Create a new hierarchy subtree.
-        NL::json next {{ keyName, overlap.m_count }};
+        NL::json next {{ keyName, overlap.m_size }};
 
         for (uint64_t dir(0); dir < 8; ++dir)
             writeHierarchy(directory, next, key.bisect(dir));
@@ -242,7 +242,7 @@ void EptAddonWriter::writeHierarchy(const std::string& directory,
     }
     else
     {
-        curr[keyName] = overlap.m_count;
+        curr[keyName] = overlap.m_size;
         for (uint64_t dir(0); dir < 8; ++dir)
             writeHierarchy(directory, curr, key.bisect(dir));
     }

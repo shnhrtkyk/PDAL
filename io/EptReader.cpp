@@ -372,7 +372,7 @@ QuickInfo EptReader::inspect()
 
         qi.m_pointCount = 0;
         for (const Overlap& overlap : *m_hierarchy)
-            qi.m_pointCount += overlap.m_count;
+            qi.m_pointCount += overlap.m_size;
     }
     qi.m_valid = true;
 
@@ -439,17 +439,13 @@ void EptReader::ready(PointTableRef table)
 
     point_count_t overlapPoints(0);
     for (const Overlap& overlap : *m_hierarchy)
-        overlapPoints += overlap.m_count;
+        overlapPoints += overlap.m_size;
 
     if (overlapPoints > 1e8)
     {
         log()->get(LogLevel::Warning) << overlapPoints <<
             " will be downloaded" << std::endl;
     }
-
-    //ABELL
-    if (m_nodeIdDim != Dimension::Id::Unknown)
-    ;
 
     // A million is a silly-large number for the number of tiles.
     m_pool.reset(new Pool(m_pool->numThreads(), 1000000));
@@ -490,81 +486,74 @@ void EptReader::overlaps()
     Key key;
     key.b = m_info->bounds();
 
-    {
-        m_nodeId = 1;
-        std::string filename =
-            m_info->hierarchyDir() + key.toString() + ".json";
-
-        // First, determine the overlapping nodes from the EPT resource.
-        overlaps(*m_hierarchy, m_connector->getJson(filename), key);
-        m_pool->await();
-    }
+    loadHierarchy(m_info->hierarchyDir(), *m_hierarchy, key);
+    m_pool->await();
 
     // Determine the addons that exist to correspond to tiles.
     for (auto& addon : m_addons)
     {
         m_nodeId = 1;
-        std::string filename = addon.hierarchyDir() + key.toString() + ".json";
-        overlaps(addon.hierarchy(), m_connector->getJson(filename), key);
+        loadHierarchy(addon.hierarchyDir(), addon.hierarchy(), key);
     }
     m_pool->await();
 }
 
 
-void EptReader::overlaps(Hierarchy& target, const NL::json& hier,
-    const Key& key)
+bool EptReader::filter(const Key& key)
 {
+    if (m_depthEnd && key.d >= m_depthEnd)
+        return true;
+
     // If this key doesn't overlap our query
     // we can skip
     if (!key.b.overlaps(m_queryBounds))
-        return;
+        return true;
 
     // Check the box of the key against our
     // query polygon(s). If it doesn't overlap,
     // we can skip
     for (auto& p: m_args->m_polys)
-        if (p.disjoint(key.b))
-            return;
+        if (p.overlaps(key.b))
+            return false;
 
-    if (m_depthEnd && key.d >= m_depthEnd) return;
+    return m_args->m_polys.size() ? true : false;
+}
 
-    auto it = hier.find(key.toString());
-    if (it == hier.end())
+
+void EptReader::loadHierarchy(const std::string& directory, Hierarchy& h,
+    const Key& key)
+{
+    if (filter(key))
         return;
 
-    int64_t numPoints = it->get<int64_t>();
-
-    if (numPoints == -1)
+    std::string filename = directory + key.toString() + ".json"; 
+    m_pool->add([this, filename, directory, &h]()
     {
-        if (!m_hierarchyStep)
-            m_hierarchyStep = key.d;
-
-        // If the hierarchy points value here is -1, then we need to fetch the
-        // hierarchy subtree corresponding to this root.
-        m_pool->add([this, &target, key]()
+        // What do we do with an exception?
+        const auto data = m_connector->getJson(filename);
         {
-            std::string filename =
-                m_info->hierarchyDir() + key.toString() + ".json";
-            const auto subRoot(m_connector->getJson(filename));
-            overlaps(target, subRoot, key);
-        });
-    }
-    else if (numPoints < 0)
-    {
-        throwError("Invalid point count for key '" + key.toString() + "'.");
-    }
-    else
-    {
-        {
-            //ABELL we could probably use a local mutex to lock the target map.
             std::lock_guard<std::mutex> lock(m_mutex);
-            target.emplace(key, (point_count_t)numPoints, m_nodeId++);
+            for (auto& entry : data.items())
+            {
+                Key k(entry.key());
+                int64_t count = entry.value().get<int64_t>();
+                if (count > 0)
+                    h.emplace(k, count, m_nodeId++);
+            }
         }
 
-        for (uint64_t dir(0); dir < 8; ++dir)
-            overlaps(target, hier, key.bisect(dir));
-    }
+        // We loop twice so that we can avoid the lock while recursing
+        // and avoid obtaining and releasing lock for each key entry.
+        for (auto& entry : data.items())
+        {
+            Key k(entry.key());
+            int64_t count = entry.value().get<int64_t>();
+            if (count == -1)
+                loadHierarchy(directory, h, k);
+        }
+    });
 }
+
 
 bool EptReader::processPoint(PointRef& dst, const TileContents& tile)
 {
@@ -742,17 +731,5 @@ top:
 
     return true;
 }
-
-/**
-Dimension::Type EptReader::getRemoteTypeTest(const NL::json& j)
-{
-    return getRemoteType(j);
-}
-
-Dimension::Type EptReader::getCoercedTypeTest(const NL::json& j)
-{
-    return getCoercedType(j);
-}
-**/
 
 } // namespace pdal

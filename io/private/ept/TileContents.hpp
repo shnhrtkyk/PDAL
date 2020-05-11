@@ -61,6 +61,8 @@ public:
         { return m_view; }
     const Key& key() const
         { return m_overlap.m_key; }
+    point_count_t size() const
+        { return m_overlap.m_size; }
     point_count_t nodeId() const
         { return m_overlap.m_nodeId; }
     const std::string& error() const

@@ -73,7 +73,7 @@ public:
         { return m_hierarchy; }
     PointLayout& layout() const
         { return const_cast<PointLayout &>(m_layout); }
-    point_count_t points(const Key& key) const;
+    point_count_t size(const Key& key) const;
     std::string dataDir() const;
     std::string hierarchyDir() const;
     static AddonList store(const Connector& connector, const NL::json& spec,
