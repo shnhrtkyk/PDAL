@@ -44,6 +44,7 @@
 
 #include <Eigen/Dense>
 
+#include <array>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -68,9 +69,12 @@ std::string CovarianceFeaturesFilter::getName() const
 void CovarianceFeaturesFilter::addArgs(ProgramArgs& args)
 {
     args.add("knn", "k-Nearest neighbors", m_knn, 10);
-    args.add("threads", "Number of threads used to run this filter", m_threads, 1);
-    args.add("feature_set", "Set of features to be computed", m_featureSet, "Dimensionality");
-    args.add("stride", "Compute features on strided neighbors", m_stride, size_t(1));
+    args.add("threads", "Number of threads used to run this filter", m_threads,
+        1);
+    args.add("feature_set", "Set of features to be computed", m_featureSet,
+        "Dimensionality");
+    args.add("stride", "Compute features on strided neighbors", m_stride,
+        size_t(1));
 }
 
 void CovarianceFeaturesFilter::addDimensions(PointLayoutPtr layout)
@@ -78,7 +82,8 @@ void CovarianceFeaturesFilter::addDimensions(PointLayoutPtr layout)
     if (m_featureSet == "Dimensionality")
     {
         for (auto dim: {"Linearity", "Planarity", "Scattering", "Verticality"})
-            m_extraDims[dim] = layout->registerOrAssignDim(dim, Dimension::Type::Double);
+            m_extraDims[dim] = layout->registerOrAssignDim(dim,
+                Dimension::Type::Double);
     }
 }
 
@@ -89,21 +94,27 @@ void CovarianceFeaturesFilter::filter(PointView& view)
 
     point_count_t nloops = view.size();
     std::vector<std::thread> threadList(m_threads);
-    for(int t = 0;t<m_threads;t++)
+
+    // This runs 'threads' functions, where the points are divided between the
+    // threads.  As example, if there are 4 threads and 100 points, the first
+    // runs 0-24, the second 25-49, the third 50-74, the 4th 75-99.
+    for (int t = 0; t < m_threads; t++)
     {
         threadList[t] = std::thread(std::bind(
-                [&](const PointId start, const PointId end)
-                {
-                    for(PointId i = start;i<end;i++)
-                        setDimensionality(view, i, kdi);
-                },
-                t*nloops/m_threads,(t+1)==m_threads?nloops:(t+1)*nloops/m_threads));
+            [&](const PointId start, const PointId end)
+            {
+                for(PointId i = start;i<end;i++)
+                    setDimensionality(view, i, kdi);
+            },
+            t*nloops/m_threads,
+            (t+1)==m_threads ? nloops : (t+1)*nloops/m_threads));
     }
     for (auto &t: threadList)
         t.join();
 }
 
-void CovarianceFeaturesFilter::setDimensionality(PointView &view, const PointId &id, const KD3Index &kid)
+void CovarianceFeaturesFilter::setDimensionality(PointView &view,
+    const PointId &id, const KD3Index &kid)
 {
     using namespace Eigen;
 
@@ -118,17 +129,18 @@ void CovarianceFeaturesFilter::setDimensionality(PointView &view, const PointId 
     if (solver.info() != Success)
         throwError("Cannot perform eigen decomposition.");
 
-    // Extract eigenvalues and eigenvectors in decreasing order (largest eigenvalue first)
+    // Extract eigenvalues and eigenvectors in decreasing order
+    // (largest eigenvalue first)
     auto ev = solver.eigenvalues();
-    std::vector<double> lambda = {((std::max)(ev[2],0.0)),
-                                  ((std::max)(ev[1],0.0)),
-                                  ((std::max)(ev[0],0.0))};
+    std::array<double, 3> lambda = {((std::max)(ev[2],0.0)),
+                                    ((std::max)(ev[1],0.0)),
+                                    ((std::max)(ev[0],0.0))};
 
     if (lambda[0] == 0)
         throwError("Eigenvalues are all 0. Can't compute local features.");
 
     auto eigenVectors = solver.eigenvectors();
-    std::vector<double> v1(3), v2(3), v3(3);
+    std::array<double, 3> v1, v2, v3;
     for (int i=0; i < 3; i++)
     {
         v1[i] = eigenVectors.col(2)(i);
@@ -143,14 +155,17 @@ void CovarianceFeaturesFilter::setDimensionality(PointView &view, const PointId 
     view.setField(m_extraDims["Planarity"], id, planarity);
     view.setField(m_extraDims["Scattering"], id, scattering);
 
-    std::vector<double> unary_vector(3);
+    std::array<double, 3> unary_vector;
     double norm = 0;
-    for (int i=0; i <3 ; i++)
+    for (int i = 0; i < 3 ; i++)
     {
-        unary_vector[i] = lambda[0] * fabs(v1[i]) + lambda[1] * fabs(v2[i]) + lambda[2] * fabs(v3[i]);
+        unary_vector[i] = lambda[0] * fabs(v1[i]) +
+                          lambda[1] * fabs(v2[i]) +
+                          lambda[2] * fabs(v3[i]);
         norm += unary_vector[i] * unary_vector[i];
     }
     norm = sqrt(norm);
     view.setField(m_extraDims["Verticality"], id, unary_vector[2] / norm);
 }
-}
+
+} // namespace pdal
